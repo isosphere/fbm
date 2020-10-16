@@ -32,6 +32,7 @@ impl FBM {
             autocovariance: None, eigenvals: None
         }
     }
+    
     fn autocovariance(&self, k: usize) -> Complex<f64> {
         let k = k as f64;
         Complex::zero() + 0.5 * ( (k - 1.0).abs().powf(2.0 * self.hurst) - 2.0 * k.abs().powf(2.0 * self.hurst) + (k + 1.0).abs().powf(2.0 * self.hurst) )
@@ -82,10 +83,10 @@ impl FBM {
         // Wood, Andrew TA, and Grace Chan. "Simulation of stationary Gaussian
         //     processes in [0, 1] d." Journal of computational and graphical
         //     statistics 3, no. 4 (1994): 409-432.
-        if self.eigenvals.as_ref().unwrap().iter().filter(|ev| ev.re < 0.0).collect::<Vec<&Complex<f64>>>().len() > 0 {
-            panic!(
-                "Combination of increments n and Hurst value H invalid for Davies-Harte method.
-                Occurs when n is small and Hurst is close to 1. "
+        if self.eigenvals.as_ref().unwrap().iter().any(|ev| ev.re.is_sign_negative()) {
+            println!(
+                "Found a negative eigenvalue. Combination of increments n={} and Hurst parameter={} invalid for Davies-Harte method.
+                Occurs when n is small and Hurst is close to 1. ", self.increments, self.hurst
             )
         }
 
