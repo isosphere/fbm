@@ -19,14 +19,14 @@ pub struct FBM {
     /// The number of increments to generate, frequently identified as 'n'
     pub increments: usize, 
     pub hurst: f64,
-    pub length: u64,
+    pub length: f64, // also called "magnitude"
     // Values to speed up Monte Carlo simulation
     autocovariance: Option<Vec<Complex<f64>>>,
     eigenvals: Option<Vec<Complex<f64>>>,
 }
 
 impl FBM {
-    pub fn new (method: Methods, increments: usize, hurst: f64, length: u64) -> Self {
+    pub fn new (method: Methods, increments: usize, hurst: f64, length: f64) -> Self {
         Self {
             method, increments, hurst, length,
             autocovariance: None, eigenvals: None
@@ -146,7 +146,7 @@ impl FBM {
 
     /// Sample the fractional Gaussian noise
     pub fn fgn(&mut self) -> Vec<f64> {
-        let scale = (self.length as f64 / self.increments as f64).powf(self.hurst);
+        let scale = (self.length / self.increments as f64).powf(self.hurst);
         let mut rng = thread_rng();
         let normal = Normal::new(0.0, 1.0).unwrap();
         
