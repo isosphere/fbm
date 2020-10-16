@@ -87,7 +87,7 @@ impl FBM {
         if self.eigenvals.as_ref().unwrap().iter().any(|ev| ev.re.is_sign_negative()) {
             panic!(
                 "Found a negative eigenvalue. Combination of increments n={} and Hurst parameter={} invalid for Davies-Harte method.
-                Occurs when n is small and Hurst is close to 1. Use the Hoskin method.", self.increments, self.hurst
+                Occurs when n is small and Hurst is close to 1. Use the Hosking method.", self.increments, self.hurst
             )
         }
 
@@ -144,7 +144,7 @@ impl FBM {
     /// Hosking, J. R. (1984). Modeling persistence in hydrological time series
     /// using fractional differencing. Water resources research, 20(12),
     /// 1898-1908.
-    fn hoskin(&mut self, gn: Vec<f64>) -> Vec<f64> {
+    fn hosking(&mut self, gn: Vec<f64>) -> Vec<f64> {
         let mut fgn = vec![0.0; self.increments];
         let mut phi = vec![0.0; self.increments];
         let mut psi = vec![0.0; self.increments];
@@ -204,7 +204,7 @@ impl FBM {
                     self.daviesharte(gn).iter().map(|e| e*scale).collect()
                 },
                 Methods::Hosking => {
-                    self.hoskin(gn).iter().map(|e| e*scale).collect()
+                    self.hosking(gn).iter().map(|e| e*scale).collect()
                 }
                 _ => {
                     panic!("Method unsupported.")
