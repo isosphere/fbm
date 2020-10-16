@@ -8,24 +8,30 @@ use rustfft::FFTplanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
-enum Methods {
+pub enum Methods {
     DaviesHarte,
 //    Cholesky, // TODO not implemented
 //    Hosking   // TODO not implemented
 }
 
 pub struct FBM {
-    method: Methods,
+    pub method: Methods,
     /// The number of increments to generate, frequently identified as 'n'
-    increments: usize, 
-    hurst: f64,
-    length: u64,
+    pub increments: usize, 
+    pub hurst: f64,
+    pub length: u64,
     // Values to speed up Monte Carlo simulation
     autocovariance: Option<Vec<Complex<f64>>>,
     eigenvals: Option<Vec<Complex<f64>>>,
 }
 
 impl FBM {
+    pub fn new (method: Methods, increments: usize, hurst: f64, length: u64) -> Self {
+        Self {
+            method, increments, hurst, length,
+            autocovariance: None, eigenvals: None
+        }
+    }
     fn autocovariance(&self, k: usize) -> Complex<f64> {
         let k = k as f64;
         Complex::zero() + 0.5 * ( (k - 1.0).abs().powf(2.0 * self.hurst) - 2.0 * k.abs().powf(2.0 * self.hurst) + (k + 1.0).abs().powf(2.0 * self.hurst) )
@@ -132,14 +138,14 @@ impl FBM {
     }
 
     /// Sample the fractional Brownian motion
-    fn fbm(&mut self) -> Vec<f64> {
+    pub fn fbm(&mut self) -> Vec<f64> {
         let mut sampled: Vec<f64> = self.fgn().iter().cumsum().collect();
         sampled.push(0.0); // why?
         sampled
     }
 
     /// Sample the fractional Gaussian noise
-    fn fgn(&mut self) -> Vec<f64> {
+    pub fn fgn(&mut self) -> Vec<f64> {
         let scale = (self.length as f64 / self.increments as f64).powf(self.hurst);
         let mut rng = thread_rng();
         let normal = Normal::new(0.0, 1.0).unwrap();
