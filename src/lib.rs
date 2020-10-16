@@ -67,7 +67,7 @@ impl FBM {
             let fft = planner.plan_fft(row.len());
             
             self.eigenvals = {
-                let mut eigenvals = Vec::new();
+                let mut eigenvals = vec![Complex::zero(); row.len()];
 
                 self.eigenvals = Some(Vec::new());
                 fft.process(&mut row, eigenvals.as_mut_slice());
@@ -129,7 +129,7 @@ impl FBM {
         let fft = planner.plan_fft(w.len());
 
         let z = {
-            let mut fft_values = Vec::new();
+            let mut fft_values = vec![Complex::zero(); w.len()];
             fft.process(&mut w, fft_values.as_mut_slice());
             fft_values
         };
