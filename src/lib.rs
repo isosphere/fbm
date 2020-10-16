@@ -21,7 +21,6 @@ pub struct FBM {
     pub hurst: f64,
     pub length: f64, // also called "magnitude"
     // Values to speed up Monte Carlo simulation
-    autocovariance: Option<Vec<Complex<f64>>>,
     eigenvals: Option<Vec<Complex<f64>>>,
     cov: Option<Vec<f64>>
 }
@@ -30,7 +29,7 @@ impl FBM {
     pub fn new (method: Methods, increments: usize, hurst: f64, length: f64) -> Self {
         Self {
             method, increments, hurst, length,
-            autocovariance: None, eigenvals: None, cov: None
+            eigenvals: None, cov: None
         }
     }
 
