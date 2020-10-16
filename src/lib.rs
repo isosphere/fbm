@@ -161,11 +161,13 @@ impl FBM {
         let mut v = 1.0;
 
         // Generate fgn realization with n increments of size 1
+        let cov = self.cov.as_ref().unwrap();
+
         for i in 1 .. self.increments {
-            phi[i - 1] = self.cov.as_ref().unwrap()[i];
+            phi[i - 1] = cov[i];
             for j in 0 .. i - 1 {
                 psi[j] = phi[j];
-                phi[i - 1] -= psi[j] * self.cov.as_ref().unwrap()[i - j - 1];
+                phi[i - 1] -= psi[j] * cov[i - j - 1];
             }
             phi[i - 1] /= v;
             for j in 0 .. i - 1 {
