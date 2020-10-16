@@ -11,7 +11,7 @@ use rustfft::num_traits::Zero;
 pub enum Methods {
     DaviesHarte,
 //    Cholesky, // TODO not implemented
-//    Hosking   // TODO not implemented
+    Hosking
 }
 
 pub struct FBM {
@@ -23,16 +23,17 @@ pub struct FBM {
     // Values to speed up Monte Carlo simulation
     autocovariance: Option<Vec<Complex<f64>>>,
     eigenvals: Option<Vec<Complex<f64>>>,
+    cov: Option<Vec<f64>>
 }
 
 impl FBM {
     pub fn new (method: Methods, increments: usize, hurst: f64, length: f64) -> Self {
         Self {
             method, increments, hurst, length,
-            autocovariance: None, eigenvals: None
+            autocovariance: None, eigenvals: None, cov: None
         }
     }
-    
+
     fn autocovariance(&self, k: usize) -> Complex<f64> {
         let k = k as f64;
         Complex::zero() + 0.5 * ( (k - 1.0).abs().powf(2.0 * self.hurst) - 2.0 * k.abs().powf(2.0 * self.hurst) + (k + 1.0).abs().powf(2.0 * self.hurst) )
@@ -84,9 +85,9 @@ impl FBM {
         //     processes in [0, 1] d." Journal of computational and graphical
         //     statistics 3, no. 4 (1994): 409-432.
         if self.eigenvals.as_ref().unwrap().iter().any(|ev| ev.re.is_sign_negative()) {
-            println!(
+            panic!(
                 "Found a negative eigenvalue. Combination of increments n={} and Hurst parameter={} invalid for Davies-Harte method.
-                Occurs when n is small and Hurst is close to 1. ", self.increments, self.hurst
+                Occurs when n is small and Hurst is close to 1. Use the Hoskin method.", self.increments, self.hurst
             )
         }
 
@@ -138,6 +139,48 @@ impl FBM {
         (0 .. self.increments).map(|i| z[i].re).collect()
     }
 
+    /// Generate a fGn realization using Hosking's method.
+    /// Method of generation is Hosking's method (exact method) from his paper:
+    /// Hosking, J. R. (1984). Modeling persistence in hydrological time series
+    /// using fractional differencing. Water resources research, 20(12),
+    /// 1898-1908.
+    fn hoskin(&mut self, gn: Vec<f64>) -> Vec<f64> {
+        let mut fgn = vec![0.0; self.increments];
+        let mut phi = vec![0.0; self.increments];
+        let mut psi = vec![0.0; self.increments];
+
+        // Monte carlo consideration
+        if self.cov.is_none() {
+            self.cov = Some((0 .. self.increments).map(|i| self.autocovariance(i).re).collect());
+        }
+
+        // First increment from stationary distribution
+        fgn[0] = gn[0];
+        phi[0] = 0.0;
+
+        let mut v = 1.0;
+
+        // Generate fgn realization with n increments of size 1
+        for i in 1 .. self.increments {
+            phi[i - 1] = self.cov.as_ref().unwrap()[i];
+            for j in 0 .. i - 1 {
+                psi[j] = phi[j];
+                phi[i - 1] -= psi[j] * self.cov.as_ref().unwrap()[i - j - 1];
+            }
+            phi[i - 1] /= v;
+            for j in 0 .. i - 1 {
+                phi[j] = psi[j] - phi[i - 1] * psi[i - j - 2];
+            }
+            v *= 1.0 - phi[i - 1] * phi[i - 1];
+            for j in 0 .. i {
+                fgn[i] += phi[j] * fgn[i - j - 1];
+            }
+            fgn[i] += v.sqrt() * gn[i];
+        }
+
+        fgn
+    }
+
     /// Sample the fractional Brownian motion
     pub fn fbm(&mut self) -> Vec<f64> {
         let mut sampled: Vec<f64> = self.fgn().iter().cumsum().collect();
@@ -159,6 +202,9 @@ impl FBM {
             match &self.method {
                 Methods::DaviesHarte => {
                     self.daviesharte(gn).iter().map(|e| e*scale).collect()
+                },
+                Methods::Hosking => {
+                    self.hoskin(gn).iter().map(|e| e*scale).collect()
                 }
                 _ => {
                     panic!("Method unsupported.")
