@@ -2,6 +2,8 @@
 //! Code is largely directly taken from that Python module.
 
 use itertools_num::ItertoolsNum;
+use ndarray::prelude::*;
+use ndarray_linalg::cholesky::*;
 use rand::thread_rng;
 use rand_distr::{Normal, Distribution};
 use rustfft::FFTplanner;
@@ -10,7 +12,7 @@ use rustfft::num_traits::Zero;
 
 pub enum Methods {
     DaviesHarte,
-//    Cholesky, // TODO not implemented
+    Cholesky,
     Hosking
 }
 
@@ -21,15 +23,16 @@ pub struct FBM {
     pub hurst: f64,
     pub length: f64, // also called "magnitude"
     // Values to speed up Monte Carlo simulation
-    eigenvals: Option<Vec<Complex<f64>>>,
-    cov: Option<Vec<f64>>
+    ds_eigenvals: Option<Vec<Complex<f64>>>,
+    hosking_cov: Option<Vec<f64>>,
+    cholesky_cov: Option<Array2<f32>>
 }
 
 impl FBM {
     pub fn new (method: Methods, increments: usize, hurst: f64, length: f64) -> Self {
         Self {
             method, increments, hurst, length,
-            eigenvals: None, cov: None
+            ds_eigenvals: None, hosking_cov: None, cholesky_cov: None
         }
     }
 
@@ -49,7 +52,7 @@ impl FBM {
     /// statistics 3, no. 4 (1994): 409-432.
     fn daviesharte(&mut self, gn: Vec<f64>) -> Vec<f64> {
         // Monte carlo consideration
-        if self.eigenvals.is_none() {
+        if self.ds_eigenvals.is_none() {
             // Generate the first row of the circulant matrix
             let row_component: Vec<Complex<f64>> = (1 .. self.increments).map(|i| self.autocovariance(i) ).collect();
             let mut reverse_component = row_component.clone();
@@ -67,10 +70,10 @@ impl FBM {
             let mut planner = FFTplanner::new(false);
             let fft = planner.plan_fft(row.len());
             
-            self.eigenvals = {
+            self.ds_eigenvals = {
                 let mut eigenvals = vec![Complex::zero(); row.len()];
 
-                self.eigenvals = Some(Vec::new());
+                self.ds_eigenvals = Some(Vec::new());
                 fft.process(&mut row, eigenvals.as_mut_slice());
                 Some(eigenvals)
             };
@@ -83,7 +86,7 @@ impl FBM {
         // Wood, Andrew TA, and Grace Chan. "Simulation of stationary Gaussian
         //     processes in [0, 1] d." Journal of computational and graphical
         //     statistics 3, no. 4 (1994): 409-432.
-        if self.eigenvals.as_ref().unwrap().iter().any(|ev| ev.re.is_sign_negative()) {
+        if self.ds_eigenvals.as_ref().unwrap().iter().any(|ev| ev.re.is_sign_negative()) {
             panic!(
                 "Found a negative eigenvalue. Combination of increments n={} and Hurst parameter={} invalid for Davies-Harte method.
                 Occurs when n is small and Hurst is close to 1. Use the Hosking method.", self.increments, self.hurst
@@ -100,7 +103,7 @@ impl FBM {
         //w = np.zeros(2 * self.n, dtype=complex)
         let mut w: Vec<Complex<f64>> = Vec::new();
         for i in 0 .. 2 * self.increments {
-            let eignvalue = match self.eigenvals.as_ref() {
+            let eignvalue = match self.ds_eigenvals.as_ref() {
                 Some(v) => {v[i]},
                 None => panic!("Expected eigenvalue at {}, got None", i)
             };
@@ -138,6 +141,33 @@ impl FBM {
         (0 .. self.increments).map(|i| z[i].re).collect()
     }
 
+    /// Generate a fgn realization using the Cholesky method.
+
+    ///     Uses Cholesky decomposition method (exact method) from:
+    ///     Asmussen, S. (1998). Stochastic simulation with a view towards
+    ///     stochastic processes. University of Aarhus. Centre for Mathematical
+    ///     Physics and Stochastics (MaPhySto)[MPS].
+    fn cholesky(&mut self, gn: Vec<f64>) -> Vec<f32> {
+        if self.cholesky_cov.is_none() {
+            let mut covariance: Array2<f32> = ArrayBase::zeros((self.increments, self.increments));
+            
+            for ((i, j), value) in covariance.indexed_iter_mut() {
+                *value = self.autocovariance(i - j).re as f32; 
+            }
+
+            println!("autocovariance set");
+
+            self.cholesky_cov = Some(covariance.cholesky(UPLO::Lower).unwrap());
+        }
+
+        let truncated_gn = {
+            let gn_downsample = gn.iter().map(|v| *v as f32).collect::<Vec<f32>>();
+            Array1::from(gn_downsample)
+        };
+
+        self.cholesky_cov.as_ref().unwrap().dot(&truncated_gn.t()).to_vec()
+    }
+
     /// Generate a fGn realization using Hosking's method.
     /// Method of generation is Hosking's method (exact method) from his paper:
     /// Hosking, J. R. (1984). Modeling persistence in hydrological time series
@@ -149,8 +179,8 @@ impl FBM {
         let mut psi = vec![0.0; self.increments];
 
         // Monte carlo consideration
-        if self.cov.is_none() {
-            self.cov = Some((0 .. self.increments).map(|i| self.autocovariance(i).re).collect());
+        if self.hosking_cov.is_none() {
+            self.hosking_cov = Some((0 .. self.increments).map(|i| self.autocovariance(i).re).collect());
         }
 
         // First increment from stationary distribution
@@ -160,7 +190,7 @@ impl FBM {
         let mut v = 1.0;
 
         // Generate fgn realization with n increments of size 1
-        let cov = self.cov.as_ref().unwrap();
+        let cov = self.hosking_cov.as_ref().unwrap();
 
         for i in 1 .. self.increments {
             phi[i - 1] = cov[i];
@@ -206,10 +236,11 @@ impl FBM {
                 },
                 Methods::Hosking => {
                     self.hosking(gn).iter().map(|e| e*scale).collect()
-                }
-                _ => {
-                    panic!("Method unsupported.")
-                }
+                },
+                Methods::Cholesky => {
+                    panic!("Not implemented: fails with memory allocation errors");
+                    //self.cholesky(gn).iter().map(|e| (*e as f64)*scale).collect()
+                },
             }
         }
     }
